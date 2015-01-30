@@ -37,76 +37,44 @@ import numpy as np
 # the other methods in your algorithm.
 
 def initialize(context):
+    set_symbol_lookup_date('2011-01-01')
+
     set_benchmark(symbol('RYH'))
 
     context.num_of_stocks_to_track = 600
     context.no_of_stocks_to_buy = 20
-    context.max = 100000
+    context.max = 250000
     context.min = 0
     context.profit = 0.02
-    context.market_cap_max = 5000000000
-    context.market_cap_min = 500000000
     context.distress_sale_value = 0.5
     context.run_once = 1
     context.mstar_group_code = 20636
 
+    context.stocks = symbols('FRX', 'HSP', 'VRX', 'RDY', \
+    'WCRX','KG','SLXP','MRX','VRUS','ARNA','IPXL','AUXL','PRX','IRWD',\
+    'MNTA','MDCO','ISPH','SCR','RDEA','MAPP','NBIX','RIGL','AKRX',\
+    'PCYC','VRX','AMRN','MYL','FRX','OREX','RCPI','IPXL','DEPO',\
+    'CPD','ALIM','RDY','MRX','BJGP','SCLN','PTX','KV_B','KV_A',\
+    'ISTA','ACUR','RMTI','NATR','RPTP','ASTX',\
+    'TARO','SCMP','FURX','POZN','ZGNX',\
+    'LCI','GENT',\
+    'PRGO','ENDP','HRTX','GALT',\
+    'MEIP',\
+    'CPRX')
+
     context.last_sold_date = {}
     context.last_bought_date = {}
 
-
-def before_trading_start(context): 
-    """
-      Called before the start of each trading day. 
-      It updates our universe with the
-      securities and values found from get_fundamentals.
-    """
     
-    
-    # Setup SQLAlchemy query to screen stocks based on PE ration
-    # and industry sector. Then filter results based on 
-    # market cap and shares outstanding.
-    # We limit the number of results to num_stocks and return the data
-    # in descending order.
-    fundamental_df = get_fundamentals(
-        query(
-            # put your query in here by typing "fundamentals."
-            fundamentals.valuation_ratios.pe_ratio,
-            fundamentals.valuation.market_cap,
-            fundamentals.asset_classification.morningstar_sector_code,
-            fundamentals.asset_classification.morningstar_industry_group_code
-        )
-        .filter(fundamentals.valuation.market_cap != None)
-        .filter(fundamentals.valuation.shares_outstanding != None)
-        .filter(fundamentals.asset_classification.morningstar_industry_group_code == context.mstar_group_code)
-        .filter(fundamentals.valuation.market_cap < context.market_cap_max)
-        .filter(fundamentals.valuation.market_cap > context.market_cap_min)
-        .order_by(fundamentals.valuation.market_cap.desc())
-        .limit(context.num_of_stocks_to_track)
-    )
-
-    for stock in fundamental_df:
-        #sector = fundamental_df[stock]['morningstar_sector_code']
-        market_cap = fundamental_df[stock]['market_cap']
-        group_code = fundamental_df[stock]['morningstar_industry_group_code']
-        #log.info("Stock  %s and market cap %s and group code %s" %(stock, market_cap, group_code))
-        
-    # Filter out only stocks with that particular sector
-    context.stocks = [stock for stock in fundamental_df]
-    
-    # Update context.fundamental_df with the securities
-    context.fundamental_df = fundamental_df[context.stocks]
-
-    update_universe(context.fundamental_df.columns.values)   
-    
-    
-def buy_stock(context, stock, data):
-    # Get if we have already traded for the day
-    exchange_time = pd.Timestamp(get_datetime()).tz_convert('US/Eastern')
-    today = exchange_time.day + exchange_time.month*30 + exchange_time.year*365
+def buy_stock(context, stock, data, today):
     # Dont buy on same date that you bought/sold
     if stock in context.last_bought_date:
         if(today == context.last_bought_date[stock]):
             return
+    # Dont buy penny stocks    
+    if data[stock].price < 3:
+        return
+    # finalize the amount (cash) to buy
     if (context.portfolio.positions[stock].amount == 0):
         amount_to_buy = min(context.portfolio.cash, (context.max/context.no_of_stocks_to_buy))
     else :
@@ -130,20 +98,17 @@ def buy_stock(context, stock, data):
         # update the date. This is used to make sure we trade only once a day
         context.last_bought_date[stock] = today
         # log the order amount and the amount that is filled  
-        message = ',buy,sid={sid}.stk={stk},amt={amt},portv={portv}, posv={posv}'  
-        message = message.format(sid=stock,amt=stock_order.amount, stk=stock_order.filled, portv=context.portfolio.portfolio_value, posv=context.portfolio.positions_value)  
-        log.info(message)    
-        record(BUY=data[stock].price)
+        #message = ',buy,sid={sid}.stk={stk},amt={amt},portv={portv}, posv={posv}'  
+        #message = message.format(sid=stock,amt=stock_order.amount, stk=stock_order.filled, portv=context.portfolio.portfolio_value, posv=context.portfolio.positions_value)  
+        #log.info(message)    
+        #record(BUY=data[stock].price)
 
         
         
-def sell_stock(context, stock, data):        
+def sell_stock(context, stock, data, today):        
     # No stocks to sell. Return
     if(context.portfolio.positions[stock] == 0):
         return
-    # Get if we have already traded for the day
-    exchange_time = pd.Timestamp(get_datetime()).tz_convert('US/Eastern')
-    today = exchange_time.day + exchange_time.month*30 + exchange_time.year*365
     # Sell all stocks
     context.order_id = order_target(stock, 0)
     # Check the order to make sure that it has bought.
@@ -155,10 +120,10 @@ def sell_stock(context, stock, data):
         # update the date. This is used to make sure we trade only once a day
         context.last_sold_date[stock] = today
         # log the order amount and the amount that is filled  
-        message = ',sell,sid={sid}.stocks={stock},amount={amount}'  
-        message = message.format(sid=stock,amount=stock_order.amount, stock=stock_order.filled)  
-        log.info(message)
-        record(SELL=data[stock].price)
+        #message = ',sell,sid={sid}.stocks={stock},amount={amount}'  
+        #message = message.format(sid=stock,amount=stock_order.amount, stock=stock_order.filled)  
+        #log.info(message)
+        #record(SELL=data[stock].price)
         #del context.last_bought_date[stock] 
         
 # Will be called on every trade event for the securities you specify. 
@@ -176,7 +141,7 @@ def handle_data(context, data):
             if (context.portfolio.positions[stock].amount != 0) and \
     (data[stock].price > (1+context.profit)*context.portfolio.positions[stock].cost_basis) and \
     data[stock].price < data[stock].vwap(20) :
-                sell_stock(context, stock, data)
+                sell_stock(context, stock, data, today)
                 
    
     # Buy again only when the price is below vwap 60 (this is for the case where you buy when the price is low
@@ -186,7 +151,7 @@ def handle_data(context, data):
         if stock in data:
             if data[stock].price < data[stock].vwap(60) or \
                 data[stock].price > data[stock].vwap(20):
-                buy_stock(context, stock, data)
+                buy_stock(context, stock, data, today)
         
 
     # if we pass 30 days and price is 80% of current price then sell it
@@ -195,4 +160,4 @@ def handle_data(context, data):
             if stock in context.last_bought_date:
                 if (today > context.last_bought_date[stock] + 30) and \
                     (data[stock].price > (context.distress_sale_value*context.portfolio.positions[stock].cost_basis)) :
-                    sell_stock(context, stock, data)
+                    sell_stock(context, stock, data, today)
